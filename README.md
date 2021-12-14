@@ -62,3 +62,15 @@ In Assignment 2 and Assignment 3, you should primarily focus on /src/raft/...
   - ![](./image/1.png)
   - 我认为是选举超时机制没有生效
     - 弄了一个选举专用的 timer (Time.After) 就 OK 了
+## Timer 的使用
+- Timer.Stop()
+- Timer.Reset()
+- case <-rf.electionTimer.C:
+## 如何执行一个异步任务，并统计任务的执行结果
+- 先定义 replyCh, 异步任务可以通过这个 Channel 返回执行结果
+- 异步任务作为 background goroutine: go func()
+- 读取 channel 返回的内容: case reply := <-replyCh
+## 角色转换的时候直接修改 role, 是否会有 bug?
+- 例如 candidate -> follower, 但是没有停止 Campaign, 随后又变成 leader?
+- 变成 follower: 统一成一个函数
+- 进一步执行的时候（例如 Campaign 时统计票的时候), 需要再次校验角色
