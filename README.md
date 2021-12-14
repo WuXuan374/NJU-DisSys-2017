@@ -57,3 +57,8 @@ In Assignment 2 and Assignment 3, you should primarily focus on /src/raft/...
 - 目前的问题出现在节点死亡的时候
   - 这个 RPC 会阻塞，导致是否收到多数票的判断也失败；那么就无法决出 Leader
   - "读取 RPC 的返回值: 这显然是一个异步操作，不能够直接读取结果"， 大抵确实是这个问题罢
+  - go 提供了 channel 机制，实现类似异步回调的机制
+- 两个候选者同时发起选举，无人胜出
+  - ![](./image/1.png)
+  - 我认为是选举超时机制没有生效
+    - 弄了一个选举专用的 timer (Time.After) 就 OK 了
