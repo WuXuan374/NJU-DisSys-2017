@@ -74,3 +74,41 @@ In Assignment 2 and Assignment 3, you should primarily focus on /src/raft/...
 - 例如 candidate -> follower, 但是没有停止 Campaign, 随后又变成 leader?
 - 变成 follower: 统一成一个函数
 - 进一步执行的时候（例如 Campaign 时统计票的时候), 需要再次校验角色
+
+# Assignment2
+## 梳理 Log Replication 阶段的整体流程
+- 领导者处理客户请求，添加日志条目
+- 领导者通过 AppendEntries 向其他节点复制这个条目
+- 如果该条目复制到超过半数节点上（又是一个计票），领导者执行这个条目，并通知其他节点
+
+### 领导者通过 AppendEntries 向其他节点复制这个条目
+- 在下一次 heartbeat 的时候带上条目信息
+
+### 领导者执行条目
+- 同时把所有 index 更小的，还没执行的都执行掉 
+### 通知其他节点执行条目
+- AppendEntries 里带上 index 和 term
+### 日志条目不一致咋办
+- AppendEntries 里头带上 nextIndex, 跟随者如果发现不匹配，则拒绝
+- nextIndex 递减，直到匹配
+- 覆写往后的日志
+
+## 编程想法
+- 先完成简单的 Log replication, 不管 log 不一致等异常情况
+### Start()
+### AppendEntries RPC struct
+### AppendEntries RPC handler
+### 日志的 index 从 1 开始
+- 所以初值设为 0
+- Term 的初值也应设为 0
+### 发送 Log 的时机是什么？
+- Raft 里头加上 pendingLog
+- heartbeat 的时候检查，存在 pendingLog 则发送；记得发完要清空
+
+## TODO
+- 是否对每个 follower 应该维护一个 leaderID, follower 只接受这个 leader 发来的日志
+- 减小 nextIndex 这一步操作还没完成
+- HeartBeat 里头没更新参数，就接着发 HeartBeat
+  - 把 HeartBeat 和 真正的 AppendEntries 分开呢
+- 在 Leader 收到了多数票之后，需要真正 apply 这个 log (rf.applyCh)
+  - 同时，follower 也要去 apply 这个 log (leader 应该接着发一个带上 index 和 term 的 HeartBeat?)
