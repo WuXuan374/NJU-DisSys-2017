@@ -129,8 +129,8 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 			Command: command,
 		})
 		rf.lastLogIndex += 1
-		DPrintf("leader: %d receive log from client, index: %d, latestLog: %d, commitIndex: %d",
-			rf.me, rf.lastLogIndex, len(rf.log)-1, rf.commitIndex)
+		//DPrintf("leader: %d receive log from client, index: %d, latestLog: %d, commitIndex: %d",
+		//	rf.me, rf.lastLogIndex, len(rf.log)-1, rf.commitIndex)
 		rf.RealAppendEntries(AppendEntriesDuration * time.Millisecond)
 		return rf.lastLogIndex, currentTerm, isLeader
 	}
@@ -162,8 +162,8 @@ func (rf *Raft) Campaign() {
 	args.Term = currentTerm
 	args.CandidateId = rf.me
 	// TODO: 先不管日志相关信息
-	args.LastLogIndex = 0
-	args.LastLogTerm = 0
+	args.LastLogIndex = rf.lastLogIndex
+	args.LastLogTerm = rf.log[rf.lastLogIndex].LogTerm
 	// 新建 Channel, 用于传回 reply. 容量为 len(rf.peers)-1
 	// 功能: (1) 计票 （2） 重发没成功的 RPC (3) 检查 term 并更新
 	replyCh := make(chan RequestVoteReply, len(rf.peers)-1)
@@ -226,7 +226,7 @@ func (rf *Raft) HeartBeat(duration time.Duration) {
 			go rf.collectAppendEntries(i, args, replyCh)
 		}
 	}
-	DPrintf("HeartBeat, message Sent\n")
+	//DPrintf("HeartBeat, message Sent\n")
 	go func() {
 		for {
 			select {
@@ -260,8 +260,7 @@ func (rf *Raft) RealAppendEntries(duration time.Duration) {
 	if !toCount {                             // 日志都已经 commit 了
 		return
 	}
-	DPrintf("leader: %d, toCount: %t, latest log: %d, commit index: %d", rf.me, toCount, len(rf.log)-1, rf.commitIndex)
-	voteCount := 0
+	//DPrintf("leader: %d, toCount: %t, latest log: %d, commit index: %d", rf.me, toCount, len(rf.log)-1, rf.commitIndex)
 	currentTerm, _ := rf.GetState()
 	args.Term = currentTerm
 	args.LeaderId = rf.me
@@ -283,9 +282,15 @@ func (rf *Raft) RealAppendEntries(duration time.Duration) {
 		if i != rf.me {
 			go rf.collectAppendEntries(i, args, replyCh)
 			// 一个比较特殊判断: 如果 rf.commitIndex+1 > nextIndex[i], 则发送 nextIndex[i] 处的日志
-			//if rf.commitIndex+1 > rf.nextIndex[i] {
+			//if rf.commitIndex+1 > rf.nextIndex[i] && rf.nextIndex[i] > 0 {
 			//	newArgs := args
 			//	newArgs.Entries = rf.log[rf.nextIndex[i] : rf.nextIndex[i]+1]
+			//	newArgs.PrevLogIndex = rf.nextIndex[i] - 1
+			//	if newArgs.PrevLogIndex > 0 {
+			//		newArgs.PrevLogTerm = rf.log[newArgs.PrevLogIndex].LogTerm
+			//	} else {
+			//		newArgs.PrevLogTerm = -1
+			//	}
 			//	go rf.collectAppendEntries(i, newArgs, replyCh)
 			//} else {
 			//	go rf.collectAppendEntries(i, args, replyCh)
@@ -298,7 +303,7 @@ func (rf *Raft) RealAppendEntries(duration time.Duration) {
 			case <-timer.C:
 				return
 			case reply := <-replyCh:
-				DPrintf("reply: %t, %d", reply.Success, reply.Term)
+				//DPrintf("reply: %t, %d", reply.Success, reply.Term)
 				if reply.Err {
 					// RPC 通信失败，重发HeartBeat
 					go rf.collectAppendEntries(reply.Server, args, replyCh)
@@ -308,37 +313,45 @@ func (rf *Raft) RealAppendEntries(duration time.Duration) {
 					return
 				}
 				if reply.Success {
-					voteCount += 1
+					for {
+						if len(rf.replicateVote) > reply.LogIndex {
+							break
+						}
+						rf.replicateVote = append(rf.replicateVote, 0)
+					}
+					rf.replicateVote[reply.LogIndex] += 1
 					// 更新 nextIndex 和 matchIndex
-					rf.matchIndex[reply.Server] = rf.nextIndex[reply.Server]
-					rf.nextIndex[reply.Server] += 1
+					rf.matchIndex[reply.Server] = reply.LogIndex
+					rf.nextIndex[reply.Server] = reply.LogIndex + 1
 
-					DPrintf("Leader %d receive replication vote from %d, voteCount %d\n", rf.me, reply.Server, voteCount)
+					DPrintf("Leader %d receive replication vote from %d, for log index: %d\n", rf.me, reply.Server, reply.LogIndex)
 				} else {
-					//rf.nextIndex[reply.Server] -= 1
-					//if rf.nextIndex[reply.Server] > 0 {
-					//	newArgs := args
-					//	newArgs.PrevLogIndex = rf.nextIndex[reply.Server] - 1
-					//	if newArgs.PrevLogIndex > 0 {
-					//		newArgs.PrevLogTerm = rf.log[newArgs.PrevLogIndex].LogTerm
-					//	} else {
-					//		newArgs.PrevLogTerm = -1
-					//	}
-					//	newArgs.Entries = rf.log[rf.nextIndex[reply.Server] : rf.nextIndex[reply.Server]+1]
-					//	go rf.collectAppendEntries(reply.Server, newArgs, replyCh)
-					//}
+					rf.nextIndex[reply.Server] -= 1
+					DPrintf("nextIndex[%d] = %d", reply.Server, rf.nextIndex[reply.Server])
+					if rf.nextIndex[reply.Server] > 0 && rf.nextIndex[reply.Server] <= rf.commitIndex {
+						newArgs := args
+						newArgs.PrevLogIndex = rf.nextIndex[reply.Server] - 1
+						if newArgs.PrevLogIndex > 0 {
+							newArgs.PrevLogTerm = rf.log[newArgs.PrevLogIndex].LogTerm
+						} else {
+							newArgs.PrevLogTerm = -1
+						}
+						newArgs.Entries = rf.log[rf.nextIndex[reply.Server] : rf.nextIndex[reply.Server]+1]
+						go rf.collectAppendEntries(reply.Server, newArgs, replyCh)
+					}
 				}
 			}
 		}
 	}()
 
-	for voteCount < len(rf.peers)/2 {
-	}
-
-	// 领导者执行条目，并通知其他节点
-	DPrintf("Leader %d receive %d votes.\n", rf.me, voteCount)
-	rf.commitIndex = args.PrevLogIndex + 1
 	go func() {
+		for len(rf.replicateVote) <= args.PrevLogIndex+1 || rf.replicateVote[args.PrevLogIndex+1] < len(rf.peers)/2 {
+		}
+		// 领导者执行条目，并通知其他节点
+		DPrintf("Leader %d receive %d votes on log index %d.\n", rf.me, rf.replicateVote[args.PrevLogIndex+1], args.PrevLogIndex+1)
+		if args.PrevLogIndex+1 > rf.commitIndex {
+			rf.commitIndex = args.PrevLogIndex + 1
+		}
 		for {
 			if rf.lastApplied >= rf.commitIndex {
 				break
@@ -353,7 +366,6 @@ func (rf *Raft) RealAppendEntries(duration time.Duration) {
 			DPrintf("Leader %d apply log entry: %d", rf.me, rf.lastApplied)
 		}
 	}()
-
 }
 
 //

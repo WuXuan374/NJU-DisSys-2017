@@ -33,13 +33,14 @@ type Raft struct {
 	electionTimer *time.Timer
 	// log 需要按顺序摆放（也就是每次都 append 到尾部）
 	// log 的下标从 1 开始
-	log          []LogEntry
-	commitIndex  int
-	lastApplied  int
-	lastLogIndex int
-	nextIndex    []int
-	matchIndex   []int
-	applyCh      chan ApplyMsg
+	log           []LogEntry
+	commitIndex   int
+	lastApplied   int
+	lastLogIndex  int
+	nextIndex     []int
+	matchIndex    []int
+	replicateVote []int // 记录日志被成功复制到多少个 follower 上
+	applyCh       chan ApplyMsg
 }
 
 //
@@ -81,10 +82,11 @@ type AppendEntriesArgs struct {
 // AppendEntries RPC reply structure
 //
 type AppendEntriesReply struct {
-	Term    int  // currentTerm, for leader to update itself (revert to follower state)
-	Success bool //
-	Err     bool // TODO: 后期可以改成具体的 error
-	Server  int
+	Term     int  // currentTerm, for leader to update itself (revert to follower state)
+	Success  bool //
+	Err      bool // TODO: 后期可以改成具体的 error
+	Server   int
+	LogIndex int // the index of successfully replicated log
 }
 
 // Debugging
@@ -142,6 +144,13 @@ func (rf *Raft) becomeLeader(voteCount int) {
 	for i := 0; i < len(rf.peers); i++ {
 		rf.nextIndex = append(rf.nextIndex, rf.lastLogIndex+1)
 		rf.matchIndex = append(rf.matchIndex, 0)
+	}
+	for i := 0; i <= rf.lastLogIndex; i++ {
+		if len(rf.replicateVote) <= i {
+			rf.replicateVote = append(rf.replicateVote, 0)
+		} else {
+			rf.replicateVote[i] = 0
+		}
 	}
 	DPrintf("%d has become leader. receive %d votes, currentTerm: %d", rf.me, voteCount, rf.currentTerm)
 }

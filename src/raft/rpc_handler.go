@@ -9,12 +9,15 @@ func (rf *Raft) RequestVote(args RequestVoteArgs, reply *RequestVoteReply) {
 	currentTerm, _ := rf.GetState()
 	reply.Term = currentTerm
 
+	DPrintf("follower %d with currentTerm: %d, args.Term: %d", rf.me, currentTerm, term)
+
 	if term < currentTerm {
 		reply.VoteGranted = false
 	} else if term == currentTerm {
 		if rf.votedFor == -1 {
 			// 检查 if candidate is as up-to-date as receiver
 			upToDate := candidateUpToDate(rf, args.LastLogIndex, args.LastLogTerm)
+			DPrintf("args.LastLogIndex: %d, args.LastLogTerm: %d, candidateUpToDate: %t", args.LastLogIndex, args.LastLogTerm, upToDate)
 			if upToDate {
 				rf.votedFor = args.CandidateId
 				reply.VoteGranted = true
@@ -25,15 +28,22 @@ func (rf *Raft) RequestVote(args RequestVoteArgs, reply *RequestVoteReply) {
 			// 本次 term 已经投过票了
 			reply.VoteGranted = false
 		}
-	} else { // term > currentTerm
+	} else {
 		rf.currentTerm = term
+		rf.votedFor = -1
 		// 可能需要切换角色
 		if rf.role != "follower" {
 			rf.role = "follower"
 			rf.resetElectionTimer(randDuration(electionTimeoutLower, electionTimeoutUpper))
 		}
-		rf.votedFor = args.CandidateId
-		reply.VoteGranted = true
+		upToDate := candidateUpToDate(rf, args.LastLogIndex, args.LastLogTerm)
+		DPrintf("args.LastLogIndex: %d, args.LastLogTerm: %d, candidateUpToDate: %t", args.LastLogIndex, args.LastLogTerm, upToDate)
+		if upToDate {
+			rf.votedFor = args.CandidateId
+			reply.VoteGranted = true
+		} else {
+			reply.VoteGranted = false
+		}
 	}
 
 	//DPrintf("%d receives RequestVote. Reply with: voteGranted: %t; Term: %d", rf.me, reply.VoteGranted, reply.Term)
@@ -49,16 +59,18 @@ func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply)
 	reply.Success = true // 赋一个初值，后面可以改的
 	if term < currentTerm {
 		reply.Success = false
+		DPrintf("%d's currentTerm is: %d, args.Term is: %d", rf.me, currentTerm, args.Term)
 		DPrintf("%d reply with false, because term < currentTerm", rf.me)
 		return
 	}
 
 	// 日志相关的检查，更新操作
-	DPrintf("%d receive log from leader %d, length: %d", rf.me, args.LeaderId, len(args.Entries))
+	//DPrintf("%d receive log from leader %d, length: %d", rf.me, args.LeaderId, len(args.Entries))
 	match, conflictIndex := rf.findMatchingLogEntry(args.PrevLogIndex, args.PrevLogTerm)
 	if !match {
 		reply.Success = false
 		DPrintf("%d reply with false, because did not find match log", rf.me)
+		DPrintf("args.PrevLogIndex: %d, args.PrevLogTerm: %d, %d has %d logs ", args.PrevLogIndex, args.PrevLogTerm, rf.me, len(rf.log))
 		if conflictIndex != -1 {
 			// -1 代表不含这个日志条目
 			// 非 -1: 出现矛盾的日志条目，应该删除这个条目及之后的条目
@@ -71,6 +83,7 @@ func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply)
 		if len(args.Entries) > 0 {
 			rf.log = append(rf.log, args.Entries...)
 			rf.lastLogIndex = len(rf.log) - 1
+			reply.LogIndex = rf.lastLogIndex
 		}
 
 		if args.LeaderCommit > rf.commitIndex {
@@ -85,7 +98,7 @@ func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply)
 		rf.role = "follower"
 	}
 	rf.electionTimer.Reset(randDuration(electionTimeoutLower, electionTimeoutUpper))
-	DPrintf("%d reply with term: %d, success: %t\n", rf.me, reply.Term, reply.Success)
+	DPrintf("%d reply with term: %d, success: %t, logIndex: %d\n", rf.me, reply.Term, reply.Success, reply.LogIndex)
 	// apply log while commitIndex > lastApplied, do it on background
 	go func() {
 		for {

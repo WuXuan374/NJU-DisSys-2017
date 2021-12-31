@@ -149,6 +149,9 @@ In Assignment 2 and Assignment 3, you should primarily focus on /src/raft/...
   - 由于会比较 nextIndex 然后才发送日志，所以给每个节点发送的日志可能不是同一个
   - 最好的做法是：每个日志有一个投票的处理机制，怎么实现呢？
   - 定义一个 replicatedVote, 记录每个日志收到的投票数；如果超过半数，就可以 commit 了
+    - 每次成功复制，消息里返回复制的 log entry 的 index
+    - 统计复制成功的数量时， 修改 replicateVote, 超过半数执行 commit, apply
+    - 根据所发送的 Log Entry, 修改相应的 replicateVote
 
 ## Debug
 - Leader 2 apply log entry 5, 大家都没有 apply
@@ -157,3 +160,7 @@ In Assignment 2 and Assignment 3, you should primarily focus on /src/raft/...
   - 简而言之，就是 HeartBeat 里头也要带上 prevLog, commitIndex 这些信息
   - Follower 收到 HeartBeat 的时候，也要去更新 commitIndex, 执行状态机等等
   - 解决了，就是这个问题！
+- TestFailAgree 的问题，或许与切换 leader 有关
+  - 经过不懈的 Debug (Leader Election 遗留下来的一些问题), 
+  - 现在缺乏的是有节点缺日志时，递减 nextIndex 的相关操作
+  - 我感觉不能复用 replyCh? 会没人接收
