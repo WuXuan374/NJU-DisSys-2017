@@ -13,8 +13,14 @@ func (rf *Raft) RequestVote(args RequestVoteArgs, reply *RequestVoteReply) {
 		reply.VoteGranted = false
 	} else if term == currentTerm {
 		if rf.votedFor == -1 {
-			rf.votedFor = args.CandidateId
-			reply.VoteGranted = true
+			// 检查 if candidate is as up-to-date as receiver
+			upToDate := candidateUpToDate(rf, args.LastLogIndex, args.LastLogTerm)
+			if upToDate {
+				rf.votedFor = args.CandidateId
+				reply.VoteGranted = true
+			} else {
+				reply.VoteGranted = false
+			}
 		} else {
 			// 本次 term 已经投过票了
 			reply.VoteGranted = false
@@ -40,42 +46,37 @@ func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply)
 	term := args.Term
 	currentTerm, _ := rf.GetState()
 	reply.Term = currentTerm
+	reply.Success = true // 赋一个初值，后面可以改的
 	if term < currentTerm {
 		reply.Success = false
+		DPrintf("%d reply with false, because term < currentTerm", rf.me)
 		return
 	}
-	if len(args.Entries) > 0 {
-		DPrintf("%d receive log from leader, index: %d", rf.me, args.PrevLogIndex+1)
-		found, entryIndex := rf.findMatchingLogEntry(args.PrevLogIndex, args.PrevLogTerm)
-		if !found {
-			reply.Success = false
-		} else {
-			if entryIndex != -1 {
-				// Conflict Log Entry, delete the entry and all following it
-				rf.log = rf.log[:entryIndex]
-			}
-			// append log entries
-			// TODO：是否需要考虑跟随者已经有了一部分 Log
-			rf.log = append(rf.log, args.Entries...)
-			for i := rf.lastLogIndex + 1; i < len(rf.log); i++ {
-				rf.applyCh <- ApplyMsg{
-					Index:       i,
-					Command:     rf.log[i].Command,
-					UseSnapshot: false,
-					Snapshot:    []byte{},
-				}
-			}
-			rf.lastLogIndex = len(rf.log) - 1
-			if args.LeaderCommit > rf.commitIndex {
-				rf.commitIndex = min(args.LeaderCommit, len(rf.log)-1)
-			}
-			if rf.commitIndex > rf.lastApplied {
-				rf.lastApplied = rf.commitIndex
 
-			}
-			DPrintf("follower %d has received log index: %d", rf.me, args.PrevLogIndex+1)
-			reply.Success = true
+	// 日志相关的检查，更新操作
+	DPrintf("%d receive log from leader %d, length: %d", rf.me, args.LeaderId, len(args.Entries))
+	match, conflictIndex := rf.findMatchingLogEntry(args.PrevLogIndex, args.PrevLogTerm)
+	if !match {
+		reply.Success = false
+		DPrintf("%d reply with false, because did not find match log", rf.me)
+		if conflictIndex != -1 {
+			// -1 代表不含这个日志条目
+			// 非 -1: 出现矛盾的日志条目，应该删除这个条目及之后的条目
+			rf.log = rf.log[:conflictIndex]
 		}
+	} else {
+		// 前一个日志条目匹配
+		// append log entries
+		// TODO：是否需要考虑跟随者已经有了一部分 Log
+		if len(args.Entries) > 0 {
+			rf.log = append(rf.log, args.Entries...)
+			rf.lastLogIndex = len(rf.log) - 1
+		}
+
+		if args.LeaderCommit > rf.commitIndex {
+			rf.commitIndex = min(args.LeaderCommit, len(rf.log)-1)
+		}
+		DPrintf("follower %d update commitIndex to %d", rf.me, rf.commitIndex)
 	}
 
 	rf.currentTerm = term
@@ -84,8 +85,23 @@ func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply)
 		rf.role = "follower"
 	}
 	rf.electionTimer.Reset(randDuration(electionTimeoutLower, electionTimeoutUpper))
-	DPrintf("%d reply with term: %d, success: %t\n", rf.me, term, reply.Success)
-	return
+	DPrintf("%d reply with term: %d, success: %t\n", rf.me, reply.Term, reply.Success)
+	// apply log while commitIndex > lastApplied, do it on background
+	go func() {
+		for {
+			if rf.lastApplied >= rf.commitIndex {
+				break
+			}
+			rf.lastApplied += 1
+			rf.applyCh <- ApplyMsg{
+				Index:       rf.lastApplied,
+				Command:     rf.log[rf.lastApplied].Command,
+				UseSnapshot: false,
+				Snapshot:    []byte{},
+			}
+			DPrintf("Follower %d apply log entry: %d", rf.me, rf.lastApplied)
+		}
+	}()
 }
 
 //

@@ -124,17 +124,13 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 		index := 0
 		return index, currentTerm, isLeader
 	} else {
-		rf.pendingLog = append(rf.pendingLog, LogEntry{
-			LogTerm: currentTerm,
-			Command: command,
-		})
 		rf.log = append(rf.log, LogEntry{
 			LogTerm: currentTerm,
 			Command: command,
 		})
 		rf.lastLogIndex += 1
-		DPrintf("leader: %d receive log from client, index: %d, pendingLog: %d",
-			rf.me, rf.lastLogIndex, len(rf.pendingLog))
+		DPrintf("leader: %d receive log from client, index: %d, latestLog: %d, commitIndex: %d",
+			rf.me, rf.lastLogIndex, len(rf.log)-1, rf.commitIndex)
 		rf.RealAppendEntries(AppendEntriesDuration * time.Millisecond)
 		return rf.lastLogIndex, currentTerm, isLeader
 	}
@@ -216,6 +212,14 @@ func (rf *Raft) HeartBeat(duration time.Duration) {
 	args.Term = currentTerm
 	args.LeaderId = rf.me
 	args.LeaderCommit = rf.commitIndex
+	if len(rf.log) < 2 {
+		args.PrevLogIndex = 0
+		args.PrevLogTerm = -1
+	} else {
+		args.PrevLogIndex = rf.commitIndex
+		args.PrevLogTerm = rf.log[rf.commitIndex].LogTerm
+	}
+	args.Entries = []LogEntry{}
 	replyCh := make(chan AppendEntriesReply, len(rf.peers)-1)
 	for i := 0; i < len(rf.peers); i++ {
 		if i != rf.me {
@@ -253,10 +257,10 @@ func (rf *Raft) RealAppendEntries(duration time.Duration) {
 	timer := time.NewTimer(duration)
 	var args AppendEntriesArgs
 	toCount := len(rf.log)-1 > rf.commitIndex // 如果发送了 Log Entry, 则需要计票
-	if !toCount {
+	if !toCount {                             // 日志都已经 commit 了
 		return
 	}
-	DPrintf("leader: %d, toCount: %t, pendingLog: %d", rf.me, toCount, len(rf.pendingLog))
+	DPrintf("leader: %d, toCount: %t, latest log: %d, commit index: %d", rf.me, toCount, len(rf.log)-1, rf.commitIndex)
 	voteCount := 0
 	currentTerm, _ := rf.GetState()
 	args.Term = currentTerm
@@ -266,16 +270,15 @@ func (rf *Raft) RealAppendEntries(duration time.Duration) {
 		args.PrevLogIndex = 0
 		args.PrevLogTerm = -1
 	} else {
-		args.PrevLogIndex = len(rf.log) - 2
-		args.PrevLogTerm = rf.log[len(rf.log)-2].LogTerm
+		args.PrevLogIndex = rf.commitIndex
+		args.PrevLogTerm = rf.log[rf.commitIndex].LogTerm
 	}
 
 	// 发送 Log Entry
 	args.Entries = rf.log[rf.commitIndex+1:]
-	DPrintf("Leader %d sent HeartBeat with log length: %d\n", rf.me, len(rf.pendingLog))
-	// 填了参数之后，清空 pendingLog
-	//rf.pendingLog = []LogEntry{}
-	replyCh := make(chan AppendEntriesReply, len(rf.peers)-1)
+	DPrintf("Leader %d sent HeartBeat with log length: %d\n", rf.me, len(args.Entries))
+
+	replyCh := make(chan AppendEntriesReply, len(rf.peers)-1) // 不需要向自己发消息
 	for i := 0; i < len(rf.peers); i++ {
 		if i != rf.me {
 			go rf.collectAppendEntries(i, args, replyCh)
@@ -309,10 +312,23 @@ func (rf *Raft) RealAppendEntries(duration time.Duration) {
 
 	// 领导者执行条目，并通知其他节点
 	DPrintf("Leader %d receive %d votes.\n", rf.me, voteCount)
-	rf.commitIndex = rf.lastLogIndex
-	rf.lastApplied = rf.lastLogIndex
-	rf.pendingLog = []LogEntry{}
-	rf.applyCh <- ApplyMsg{Index: rf.lastLogIndex, Command: rf.log[rf.lastLogIndex].Command, UseSnapshot: false, Snapshot: []byte{}}
+	rf.commitIndex = args.PrevLogIndex + len(args.Entries)
+	go func() {
+		for {
+			if rf.lastApplied >= rf.commitIndex {
+				break
+			}
+			rf.lastApplied += 1
+			rf.applyCh <- ApplyMsg{
+				Index:       rf.lastApplied,
+				Command:     rf.log[rf.lastApplied].Command,
+				UseSnapshot: false,
+				Snapshot:    []byte{},
+			}
+			DPrintf("Leader %d apply log entry: %d", rf.me, rf.lastApplied)
+		}
+	}()
+
 }
 
 //

@@ -102,13 +102,44 @@ In Assignment 2 and Assignment 3, you should primarily focus on /src/raft/...
 - 所以初值设为 0
 - Term 的初值也应设为 0
 ### 发送 Log 的时机是什么？
-- Raft 里头加上 pendingLog
-- heartbeat 的时候检查，存在 pendingLog 则发送；记得发完要清空
+- len(rf.log) - 1 > rf.commitIndex
+- 可能有多个 log, 全部发送
 
 ## TODO
+- **最后记得把代码全部放到 raft.go 里面！**
 - 是否对每个 follower 应该维护一个 leaderID, follower 只接受这个 leader 发来的日志
 - 减小 nextIndex 这一步操作还没完成
 - HeartBeat 里头没更新参数，就接着发 HeartBeat
   - 把 HeartBeat 和 真正的 AppendEntries 分开呢
 - 在 Leader 收到了多数票之后，需要真正 apply 这个 log (rf.applyCh)
   - 同时，follower 也要去 apply 这个 log (leader 应该接着发一个带上 index 和 term 的 HeartBeat?)
+- 现在的 apply 都是硬编码
+  - 对于 leader, apply 所有发送给 follower, 且收到多数票的 entries
+  - 对于 follower，需要比较leader 的 commitIndex 和 term，来确定 apply 哪些
+
+- *如何判断哪些 log 需要发送？
+  - *len(rf.log) - 1 > rf.commitIndex?
+  - *rf.log 下标从1处开始
+  - *可能会发送多个 log
+
+- *Reply false if log doesn't contain an entry at prevLogIndex 
+  - whose term matches prevLogTerm
+
+- *RequestVote: 当 candidate log up-to-date 时，才 grant vote
+  - up-to-date: 5.4.1, 比较 last log entry
+    - term 不同，term 更大的，更 up-to-date
+    - same term: log 更长，更加 up-to-date
+
+- *看看 AppendEntries, leader 应该怎么处理
+  - Safely Replicated(超过半数的回复)， apply state machine +  respond to client
+
+- log 的重发：只对发送失败的？
+  - 不止，对于 reply 为 false的，还有 nextIndex 等需要更新
+
+## Debug
+- Leader 2 apply log entry 5, 大家都没有 apply
+  - 为什么只有最后一个 apply 不了？
+  - 之前的 log entry, 每次client 有新的 log entry 来时，follower 会顺便 commit 之前没 commit 的
+  - 简而言之，就是 HeartBeat 里头也要带上 prevLog, commitIndex 这些信息
+  - Follower 收到 HeartBeat 的时候，也要去更新 commitIndex, 执行状态机等等
+  - 解决了，就是这个问题！

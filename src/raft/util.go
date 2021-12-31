@@ -151,8 +151,8 @@ func (rf *Raft) becomeLeader(voteCount int) {
 // 日志检查相关函数
 //
 func (rf *Raft) findMatchingLogEntry(logIndex int, logTerm int) (bool, int) {
-	// bool: false 代表没找到
-	// int: 如果是缺少这个 Entry, 此项为 -1; 如果是该 index 存在 Entry, 返回该 Entry 的 index（无论是否 conflict）
+	// bool: false 代表不匹配
+	// int: 如果不匹配，返回不匹配的 index, 方便调用程序删除之后的日志条目
 	// 如果这是第一个日志，就不用校验了
 	if logIndex == 0 {
 		return true, -1
@@ -161,11 +161,23 @@ func (rf *Raft) findMatchingLogEntry(logIndex int, logTerm int) (bool, int) {
 		return false, -1
 	}
 	if logTerm != rf.log[logIndex].LogTerm {
-		return true, logIndex
+		return false, logIndex
 	}
 
 	return true, -1
 
+}
+
+func candidateUpToDate(receiver *Raft, candidateLogIndex int, candidateLogTerm int) bool {
+	// up-to-date: 5.4.1, 比较 last log entry
+	// term 不同，term 更大的，更 up-to-date
+	// same term: log 更长，更加 up-to-date
+	// candidate 至少应该 as up to date as receiver, true 代表 as up to date
+	if receiver.log[receiver.lastLogIndex].LogTerm != candidateLogTerm {
+		return candidateLogTerm >= receiver.log[receiver.lastLogIndex].LogTerm
+	}
+	// same term
+	return candidateLogIndex >= receiver.lastLogIndex
 }
 
 //
