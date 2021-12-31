@@ -8,7 +8,6 @@
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/raft/raft.go" beforeDir="false" afterPath="$PROJECT_DIR$/src/raft/raft.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/raft/rpc_handler.go" beforeDir="false" afterPath="$PROJECT_DIR$/src/raft/rpc_handler.go" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/raft/util.go" beforeDir="false" afterPath="$PROJECT_DIR$/src/raft/util.go" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -131,7 +130,7 @@
       <recent name="$PROJECT_DIR$/image" />
     </key>
   </component>
-  <component name="RunManager" selected="Go Test.TestFailAgree in raft">
+  <component name="RunManager" selected="Go Test.TestBasicAgree in raft">
     <configuration default="true" type="Applet" factoryName="Applet">
       <option name="HTML_USED" value="false" />
       <option name="WIDTH" value="400" />
@@ -265,10 +264,10 @@
     </configuration>
     <recent_temporary>
       <list>
-        <item itemvalue="Go Test.TestFailAgree in raft" />
         <item itemvalue="Go Test.TestBasicAgree in raft" />
-        <item itemvalue="Go Test.TestReElection in raft" />
+        <item itemvalue="Go Test.TestFailAgree in raft" />
         <item itemvalue="Go Test.TestInitialElection in raft" />
+        <item itemvalue="Go Test.TestReElection in raft" />
       </list>
     </recent_temporary>
   </component>

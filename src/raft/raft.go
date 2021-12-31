@@ -274,14 +274,22 @@ func (rf *Raft) RealAppendEntries(duration time.Duration) {
 		args.PrevLogTerm = rf.log[rf.commitIndex].LogTerm
 	}
 
-	// 发送 Log Entry
-	args.Entries = rf.log[rf.commitIndex+1:]
-	DPrintf("Leader %d sent HeartBeat with log length: %d\n", rf.me, len(args.Entries))
+	// 发送 Log Entry, 一次只发一个
+	args.Entries = rf.log[rf.commitIndex+1 : rf.commitIndex+2]
+	DPrintf("Leader %d sent HeartBeat with log index: %d\n", rf.me, rf.commitIndex+1)
 
 	replyCh := make(chan AppendEntriesReply, len(rf.peers)-1) // 不需要向自己发消息
 	for i := 0; i < len(rf.peers); i++ {
 		if i != rf.me {
 			go rf.collectAppendEntries(i, args, replyCh)
+			// 一个比较特殊判断: 如果 rf.commitIndex+1 > nextIndex[i], 则发送 nextIndex[i] 处的日志
+			//if rf.commitIndex+1 > rf.nextIndex[i] {
+			//	newArgs := args
+			//	newArgs.Entries = rf.log[rf.nextIndex[i] : rf.nextIndex[i]+1]
+			//	go rf.collectAppendEntries(i, newArgs, replyCh)
+			//} else {
+			//	go rf.collectAppendEntries(i, args, replyCh)
+			//}
 		}
 	}
 	go func() {
@@ -301,7 +309,24 @@ func (rf *Raft) RealAppendEntries(duration time.Duration) {
 				}
 				if reply.Success {
 					voteCount += 1
+					// 更新 nextIndex 和 matchIndex
+					rf.matchIndex[reply.Server] = rf.nextIndex[reply.Server]
+					rf.nextIndex[reply.Server] += 1
+
 					DPrintf("Leader %d receive replication vote from %d, voteCount %d\n", rf.me, reply.Server, voteCount)
+				} else {
+					//rf.nextIndex[reply.Server] -= 1
+					//if rf.nextIndex[reply.Server] > 0 {
+					//	newArgs := args
+					//	newArgs.PrevLogIndex = rf.nextIndex[reply.Server] - 1
+					//	if newArgs.PrevLogIndex > 0 {
+					//		newArgs.PrevLogTerm = rf.log[newArgs.PrevLogIndex].LogTerm
+					//	} else {
+					//		newArgs.PrevLogTerm = -1
+					//	}
+					//	newArgs.Entries = rf.log[rf.nextIndex[reply.Server] : rf.nextIndex[reply.Server]+1]
+					//	go rf.collectAppendEntries(reply.Server, newArgs, replyCh)
+					//}
 				}
 			}
 		}
@@ -312,7 +337,7 @@ func (rf *Raft) RealAppendEntries(duration time.Duration) {
 
 	// 领导者执行条目，并通知其他节点
 	DPrintf("Leader %d receive %d votes.\n", rf.me, voteCount)
-	rf.commitIndex = args.PrevLogIndex + len(args.Entries)
+	rf.commitIndex = args.PrevLogIndex + 1
 	go func() {
 		for {
 			if rf.lastApplied >= rf.commitIndex {

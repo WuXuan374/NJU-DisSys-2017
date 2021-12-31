@@ -135,6 +135,20 @@ In Assignment 2 and Assignment 3, you should primarily focus on /src/raft/...
 
 - log 的重发：只对发送失败的？
   - 不止，对于 reply 为 false的，还有 nextIndex 等需要更新
+- RealAppendEntries: 是否需要改成每次只发一个 entry? 是的
+
+- nextIndex 和 matchIndex
+  - *nextIndex 初值为 leader last log index + 1 (每次有新的 leader 产生时更新)
+  - *matchIndex 初值为 0
+  - *发送 AppendEntries 时，如果 leader.lastLogIndex > nextIndex[i], 则发送 nextIndex[i] 位置上的日志
+  - *AppendEntries 成功: 更新 nextIndex 和 matchIndex
+  - *AppendEntries 失败：递减 nextIndex, 重发消息
+  - *args 要搞一个副本，不要互相弄混了
+
+- 有一个比较麻烦的：需要区分follower 是针对哪个 log 进行回复的
+  - 由于会比较 nextIndex 然后才发送日志，所以给每个节点发送的日志可能不是同一个
+  - 最好的做法是：每个日志有一个投票的处理机制，怎么实现呢？
+  - 定义一个 replicatedVote, 记录每个日志收到的投票数；如果超过半数，就可以 commit 了
 
 ## Debug
 - Leader 2 apply log entry 5, 大家都没有 apply

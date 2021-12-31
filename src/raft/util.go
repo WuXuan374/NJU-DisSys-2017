@@ -39,7 +39,6 @@ type Raft struct {
 	lastLogIndex int
 	nextIndex    []int
 	matchIndex   []int
-	pendingLog   []LogEntry // 等待 leader 发送的 log entries
 	applyCh      chan ApplyMsg
 }
 
