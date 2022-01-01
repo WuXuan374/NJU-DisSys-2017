@@ -118,7 +118,7 @@ func (rf *Raft) collectAppendEntries(server int, args AppendEntriesArgs, replyCh
 		//
 		//}
 		// 更新 nextIndex 和 matchIndex
-		rf.matchIndex[server] = args.PrevLogIndex + len(args.Entries)
+		rf.matchIndex[server] = reply.LastMatchedIndex
 
 		//DPrintf("Leader %d receive replication vote from %d\n", rf.me, reply.Server)
 		return
@@ -303,8 +303,7 @@ func (rf *Raft) RealAppendEntries() {
 		args.PrevLogTerm = rf.log[rf.commitIndex].LogTerm
 	}
 
-	// 发送 Log Entry, 一次只发一个
-	args.Entries = rf.log[rf.commitIndex+1 : rf.commitIndex+2]
+	args.Entries = rf.log[rf.commitIndex+1:]
 	//DPrintf("Leader %d sent HeartBeat with log index: %d\n", rf.me, rf.commitIndex+1)
 
 	replyCh := make(chan AppendEntriesReply, len(rf.peers)-1) // 不需要向自己发消息

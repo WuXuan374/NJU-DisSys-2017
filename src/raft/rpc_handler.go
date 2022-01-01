@@ -81,12 +81,28 @@ func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply)
 		// 前一个日志条目匹配
 		// append log entries
 		// TODO：是否需要考虑跟随者已经有了一部分 Log
-		for _, item := range args.Entries {
-			if !contains(rf.log, item) {
-				rf.log = append(rf.log, item)
-				rf.lastLogIndex = len(rf.log) - 1
-			}
-		}
+		//for i := 1; i <= len(args.Entries); i++ {
+		//	if args.PrevLogIndex+i >= len(rf.log) {
+		//		rf.log = append(rf.log, args.Entries[i-1])
+		//	} else if rf.log[args.PrevLogIndex+i].LogTerm != args.Entries[i-1].LogTerm {
+		//		rf.log = rf.log[:args.PrevLogIndex+i]
+		//		rf.log = append(rf.log, args.Entries[i-1])
+		//	} else {
+		//		rf.log = append(rf.log, args.Entries[i-1])
+		//	}
+		//}
+		//rf.lastLogIndex = len(rf.log) - 1
+		//for _, item := range args.Entries {
+		//	if !contains(rf.log, item) {
+		//		rf.log = append(rf.log, item)
+		//		rf.lastLogIndex = len(rf.log) - 1
+		//	}
+		//}
+
+		rf.log = append(rf.log[:args.PrevLogIndex+1], args.Entries...)
+		rf.lastLogIndex = len(rf.log) - 1
+
+		reply.LastMatchedIndex = rf.lastLogIndex
 
 		if args.LeaderCommit > rf.commitIndex {
 			rf.commitIndex = min(args.LeaderCommit, len(rf.log)-1)

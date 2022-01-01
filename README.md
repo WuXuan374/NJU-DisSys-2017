@@ -109,7 +109,7 @@ In Assignment 2 and Assignment 3, you should primarily focus on /src/raft/...
 - **最后记得把代码全部放到 raft.go 里面！**
 - 是否对每个 follower 应该维护一个 leaderID, follower 只接受这个 leader 发来的日志
 - 减小 nextIndex 这一步操作还没完成
-- HeartBeat 里头没更新参数，就接着发 HeartBeat
+- *HeartBeat 里头没更新参数，就接着发 HeartBeat
   - 把 HeartBeat 和 真正的 AppendEntries 分开呢
 - 在 Leader 收到了多数票之后，需要真正 apply 这个 log (rf.applyCh)
   - 同时，follower 也要去 apply 这个 log (leader 应该接着发一个带上 index 和 term 的 HeartBeat?)
@@ -164,3 +164,31 @@ In Assignment 2 and Assignment 3, you should primarily focus on /src/raft/...
   - 经过不懈的 Debug (Leader Election 遗留下来的一些问题), 
   - 现在缺乏的是有节点缺日志时，递减 nextIndex 的相关操作
   - 我感觉不能复用 replyCh? 会没人接收
+- *首先检查下 ConcurrentStart 是什么错误
+  - 首先，Start 里面获取 rf 的参数需要加锁
+  - 其次，一个现象：前两个 log 成功发送，后几个死活发送不了
+  - 原因是只有 Start() 中调用了 RealAppendEntries, 实际上HeartBeat() 里应该检测 commitIndex == lastLogIndex? 若不相等，也得调用
+- *修改一下统计票数的方式，改为 matchIndex
+- TestFailNoAgree: slice bounds out of range [:3]
+  - 很 tricky, 一个 a= [1,2,3] 切片， a[2:] 一定不报错，a[2:5] 可能报错（如果超出了切片的capacity）
+- TestRejoin: 需要考虑leaderID, 才决定是否接受发送的日志
+  - 好像无法解决，如果能够删除log 的话
+
+## 0101
+- 首先把 count replica 实现
+- 重温整个流程，看看什么地方会出问题
+  - 可以考虑一次发多个副本、直接找到 conflictIndex 等方法
+- 截止时间 今天中午。没做出来就得止损了
+- reply.LogIndex 是这个 Log 在 follower 这存放的位置
+### 一个大胆的想法（这个想法是可行的）
+- 如果发现不一致，返回 conflictIndex,
+- 直接把所有日志发过去，找到匹配的之后把剩余的添加上来
+### 为什么有的消息收不到呢？
+- 发现每次 sendLog 单独弄一个函数，是有作用的
+### MatchIndex 的生命周期(基本完成)
+- collectAppendEntries: reply.Success, 则把 matchIndex[server] 置为发送的最大日志条目
+- installLog 成功，应该返回 follower 的 lastLogIndex, 置 matchIndex[server] = lastLogIndex
+- becomeLeader 里头开一个 goroutine, 超过半数 matchIndex 大于 commitIndex 的话，取大于commitIndex 的最小值，更新commitIndex，apply log
+- 如果重新选举了 Leader, 如何获取这个 matchIndex
+### 不应该从 conflictIndex 开始发送日志。InstallLogs 里头直接发全量的吧
+### InstallLogs 里头， Follower 应该对Log Entry 进行检查，从不一致的地方进行复制，而不是直接复制

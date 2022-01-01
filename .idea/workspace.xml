@@ -131,7 +131,7 @@
       <recent name="$PROJECT_DIR$/image" />
     </key>
   </component>
-  <component name="RunManager" selected="Go Test.TestFailAgree in raft">
+  <component name="RunManager" selected="Go Test.go test raft">
     <configuration default="true" type="Applet" factoryName="Applet">
       <option name="HTML_USED" value="false" />
       <option name="WIDTH" value="400" />
@@ -230,7 +230,7 @@
       <pattern value="^\QTestBackup\E$" />
       <method v="2" />
     </configuration>
-    <configuration name="TestBasicAgree in raft" type="GoTestRunConfiguration" factoryName="Go Test" temporary="true" nameIsGenerated="true">
+    <configuration name="TestConcurrentStarts in raft" type="GoTestRunConfiguration" factoryName="Go Test" temporary="true" nameIsGenerated="true">
       <module name="NJU-DisSys-2017" />
       <working_directory value="$PROJECT_DIR$/src/raft" />
       <kind value="PACKAGE" />
@@ -238,7 +238,18 @@
       <directory value="$PROJECT_DIR$" />
       <filePath value="$PROJECT_DIR$" />
       <framework value="gotest" />
-      <pattern value="^\QTestBasicAgree\E$" />
+      <pattern value="^\QTestConcurrentStarts\E$" />
+      <method v="2" />
+    </configuration>
+    <configuration name="TestCount in raft" type="GoTestRunConfiguration" factoryName="Go Test" temporary="true" nameIsGenerated="true">
+      <module name="NJU-DisSys-2017" />
+      <working_directory value="$PROJECT_DIR$/src/raft" />
+      <kind value="PACKAGE" />
+      <package value="raft" />
+      <directory value="$PROJECT_DIR$" />
+      <filePath value="$PROJECT_DIR$" />
+      <framework value="gotest" />
+      <pattern value="^\QTestCount\E$" />
       <method v="2" />
     </configuration>
     <configuration name="TestFailAgree in raft" type="GoTestRunConfiguration" factoryName="Go Test" temporary="true" nameIsGenerated="true">
@@ -252,7 +263,7 @@
       <pattern value="^\QTestFailAgree\E$" />
       <method v="2" />
     </configuration>
-    <configuration name="TestInitialElection in raft" type="GoTestRunConfiguration" factoryName="Go Test" temporary="true" nameIsGenerated="true">
+    <configuration name="go test raft" type="GoTestRunConfiguration" factoryName="Go Test" temporary="true" nameIsGenerated="true">
       <module name="NJU-DisSys-2017" />
       <working_directory value="$PROJECT_DIR$/src/raft" />
       <kind value="PACKAGE" />
@@ -260,27 +271,15 @@
       <directory value="$PROJECT_DIR$" />
       <filePath value="$PROJECT_DIR$" />
       <framework value="gotest" />
-      <pattern value="^\QTestInitialElection\E$" />
-      <method v="2" />
-    </configuration>
-    <configuration name="TestReElection in raft" type="GoTestRunConfiguration" factoryName="Go Test" temporary="true" nameIsGenerated="true">
-      <module name="NJU-DisSys-2017" />
-      <working_directory value="$PROJECT_DIR$/src/raft" />
-      <kind value="PACKAGE" />
-      <package value="raft" />
-      <directory value="$PROJECT_DIR$" />
-      <filePath value="$PROJECT_DIR$" />
-      <framework value="gotest" />
-      <pattern value="^\QTestReElection\E$" />
       <method v="2" />
     </configuration>
     <recent_temporary>
       <list>
-        <item itemvalue="Go Test.TestFailAgree in raft" />
-        <item itemvalue="Go Test.TestBasicAgree in raft" />
-        <item itemvalue="Go Test.TestReElection in raft" />
-        <item itemvalue="Go Test.TestInitialElection in raft" />
+        <item itemvalue="Go Test.go test raft" />
+        <item itemvalue="Go Test.TestConcurrentStarts in raft" />
         <item itemvalue="Go Test.TestBackup in raft" />
+        <item itemvalue="Go Test.TestCount in raft" />
+        <item itemvalue="Go Test.TestFailAgree in raft" />
       </list>
     </recent_temporary>
   </component>

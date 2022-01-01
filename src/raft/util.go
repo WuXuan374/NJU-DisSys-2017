@@ -165,7 +165,7 @@ func (rf *Raft) checkMatchIndex() {
 				minimum := 0
 				for i := 0; i < len(rf.peers); i++ {
 					if i != rf.me {
-						DPrintf("matchIndex[%d]: %d", i, rf.matchIndex[i])
+						DPrintf("%d: matchIndex[%d]: %d", rf.me, i, rf.matchIndex[i])
 						if rf.matchIndex[i] > rf.commitIndex {
 							count += 1
 							if minimum == 0 {
@@ -177,7 +177,8 @@ func (rf *Raft) checkMatchIndex() {
 					}
 				}
 
-				if count > len(rf.peers)/2 {
+				currentTerm, _ := rf.GetState()
+				if count >= len(rf.peers)/2 && minimum > rf.commitIndex && minimum < len(rf.log) && rf.log[minimum].LogTerm == currentTerm {
 					rf.commitIndex = minimum
 					rf.applyLog()
 				}
@@ -207,7 +208,6 @@ func (rf *Raft) findMatchingLogEntry(logIndex int, logTerm int) (bool, int) {
 	}
 
 	return true, -1
-
 }
 
 func candidateUpToDate(receiver *Raft, candidateLogIndex int, candidateLogTerm int) bool {
