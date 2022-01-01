@@ -30,7 +30,7 @@ import "labrpc"
 const heartbeatDuration = 50
 const electionTimeoutLower = 150
 const electionTimeoutUpper = 300
-const AppendEntriesDuration = 50
+const checkMatchIndexTimeout = 50
 const campaignTimeout = 100
 
 //
@@ -113,12 +113,12 @@ func (rf *Raft) collectAppendEntries(server int, args AppendEntriesArgs, replyCh
 		return
 	}
 	if reply.Success {
-		for i := 0; i < len(args.Entries); i++ {
-			rf.replicateVote[args.PrevLogIndex+i+1] += 1
-			// 更新 nextIndex 和 matchIndex
-		}
-		rf.matchIndex[reply.Server] = args.PrevLogIndex + len(args.Entries)
-		rf.nextIndex[reply.Server] = args.PrevLogIndex + len(args.Entries) + 1
+		//for i := 0; i < len(args.Entries); i++ {
+		//	rf.replicateVote[args.PrevLogIndex+i+1] += 1
+		//
+		//}
+		// 更新 nextIndex 和 matchIndex
+		rf.matchIndex[server] = args.PrevLogIndex + len(args.Entries)
 
 		//DPrintf("Leader %d receive replication vote from %d\n", rf.me, reply.Server)
 		return
@@ -155,7 +155,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 			Command: command,
 		})
 		rf.lastLogIndex += 1
-		rf.replicateVote = append(rf.replicateVote, 0)
+		//rf.replicateVote = append(rf.replicateVote, 0)
 		DPrintf("leader: %d receive log from client, index: %d, latestLog: %d, commitIndex: %d",
 			rf.me, rf.lastLogIndex, len(rf.log)-1, rf.commitIndex)
 		rf.mu.Unlock()
@@ -314,17 +314,17 @@ func (rf *Raft) RealAppendEntries() {
 		}
 	}
 
-	go func() {
-		// 只取计算本次发送的那一条日志，是否复制到超过半数节点上
-		for rf.replicateVote[args.PrevLogIndex+1] < len(rf.peers)/2 {
-		}
-		// 领导者执行条目，并通知其他节点
-		//DPrintf("Leader %d receive %d votes on log index %d.\n", rf.me, rf.replicateVote[args.PrevLogIndex+1], args.PrevLogIndex+1)
-		if args.PrevLogIndex+1 > rf.commitIndex {
-			rf.commitIndex = args.PrevLogIndex + 1
-		}
-		rf.applyLog()
-	}()
+	//go func() {
+	//	// 只取计算本次发送的那一条日志，是否复制到超过半数节点上
+	//	for rf.replicateVote[args.PrevLogIndex+1] < len(rf.peers)/2 {
+	//	}
+	//	// 领导者执行条目，并通知其他节点
+	//	//DPrintf("Leader %d receive %d votes on log index %d.\n", rf.me, rf.replicateVote[args.PrevLogIndex+1], args.PrevLogIndex+1)
+	//	if args.PrevLogIndex+1 > rf.commitIndex {
+	//		rf.commitIndex = args.PrevLogIndex + 1
+	//	}
+	//	rf.applyLog()
+	//}()
 
 }
 

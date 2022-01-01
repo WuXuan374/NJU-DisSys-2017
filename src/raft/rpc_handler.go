@@ -120,17 +120,12 @@ func (rf *Raft) InstallLogs(args AppendEntriesArgs, reply *AppendEntriesReply) {
 		//DPrintf("%d reply with false, because term < currentTerm", rf.me)
 		return
 	}
-	//for _, item := range args.Entries {
-	//	if !contains(rf.log, item) {
-	//		rf.log = append(rf.log, item)
-	//		rf.lastLogIndex = len(rf.log) - 1
-	//	}
-	//}
 	rf.log = args.Entries
 	rf.lastLogIndex = len(rf.log) - 1
 	if args.LeaderCommit > rf.commitIndex {
 		rf.commitIndex = min(args.LeaderCommit, len(rf.log)-1)
 	}
+	reply.LastMatchedIndex = rf.lastLogIndex
 	DPrintf("follower %d update commitIndex to %d", rf.me, rf.commitIndex)
 	rf.applyLog()
 }

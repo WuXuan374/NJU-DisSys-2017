@@ -82,11 +82,12 @@ type AppendEntriesArgs struct {
 // AppendEntries RPC reply structure
 //
 type AppendEntriesReply struct {
-	Term          int  // currentTerm, for leader to update itself (revert to follower state)
-	Success       bool //
-	Err           bool // TODO: 后期可以改成具体的 error
-	Server        int
-	ConflictIndex int // the index of successfully replicated log
+	Term             int  // currentTerm, for leader to update itself (revert to follower state)
+	Success          bool //
+	Err              bool // TODO: 后期可以改成具体的 error
+	Server           int
+	ConflictIndex    int // the index of successfully replicated log
+	LastMatchedIndex int
 }
 
 // Debugging
@@ -145,14 +146,44 @@ func (rf *Raft) becomeLeader(voteCount int) {
 		rf.nextIndex = append(rf.nextIndex, rf.lastLogIndex+1)
 		rf.matchIndex = append(rf.matchIndex, 0)
 	}
-	for i := 0; i <= rf.lastLogIndex; i++ {
-		if len(rf.replicateVote) <= i {
-			rf.replicateVote = append(rf.replicateVote, 0)
-		} else {
-			rf.replicateVote[i] = 0
+	DPrintf("%d has become leader. receive %d votes, currentTerm: %d", rf.me, voteCount, rf.currentTerm)
+
+	go rf.checkMatchIndex()
+}
+
+func (rf *Raft) checkMatchIndex() {
+	ticker := time.NewTicker(checkMatchIndexTimeout * time.Millisecond)
+	for {
+		select {
+		case <-ticker.C:
+			_, isLeader := rf.GetState()
+			if !isLeader {
+				ticker.Stop()
+				return
+			} else {
+				count := 0
+				minimum := 0
+				for i := 0; i < len(rf.peers); i++ {
+					if i != rf.me {
+						DPrintf("matchIndex[%d]: %d", i, rf.matchIndex[i])
+						if rf.matchIndex[i] > rf.commitIndex {
+							count += 1
+							if minimum == 0 {
+								minimum = rf.matchIndex[i]
+							} else {
+								minimum = min(minimum, rf.matchIndex[i])
+							}
+						}
+					}
+				}
+
+				if count > len(rf.peers)/2 {
+					rf.commitIndex = minimum
+					rf.applyLog()
+				}
+			}
 		}
 	}
-	DPrintf("%d has become leader. receive %d votes, currentTerm: %d", rf.me, voteCount, rf.currentTerm)
 }
 
 //
@@ -242,14 +273,8 @@ func (rf *Raft) installLogs(server int, conflictIndex int) {
 		return
 	}
 	if followerReply.Success {
-		rf.matchIndex[server] = args.PrevLogIndex + len(args.Entries)
-		rf.nextIndex[server] = args.PrevLogIndex + len(args.Entries) + 1
-
+		rf.matchIndex[server] = followerReply.LastMatchedIndex
 		//DPrintf("Leader %d receive replication vote from %d\n", rf.me, server)
-		return
-	} else {
-		newConflictIndex := followerReply.ConflictIndex
-		go rf.installLogs(server, newConflictIndex)
 		return
 	}
 }
