@@ -27,7 +27,7 @@ import "labrpc"
 // import "encoding/gob"
 
 // 一系列常量定义
-const heartbeatDuration = 120
+const heartbeatDuration = 50
 const electionTimeoutLower = 150
 const electionTimeoutUpper = 300
 const AppendEntriesDuration = 50
@@ -235,28 +235,32 @@ func (rf *Raft) HeartBeat(duration time.Duration) {
 	// 成为 Leader 之后，开启一个定时器，每隔 50ms 发送 heartbeat 给其他节点
 	// Assignment 2: HeartBeat 时会带上要发送的 log entry
 	timer := time.NewTimer(duration)
-	if rf.commitIndex < rf.lastLogIndex {
-		rf.RealAppendEntries()
-	}
-	var args AppendEntriesArgs
 	currentTerm, _ := rf.GetState()
-	args.Term = currentTerm
-	args.LeaderId = rf.me
-	args.LeaderCommit = rf.commitIndex
-	if rf.commitIndex < 1 {
-		args.PrevLogIndex = 0
-		args.PrevLogTerm = -1
-	} else {
-		args.PrevLogIndex = rf.commitIndex
-		args.PrevLogTerm = rf.log[rf.commitIndex].LogTerm
-	}
-	args.Entries = []LogEntry{}
 	replyCh := make(chan AppendEntriesReply, len(rf.peers)-1)
-	for i := 0; i < len(rf.peers); i++ {
-		if i != rf.me {
-			go rf.collectAppendEntries(i, args, replyCh)
+	if rf.commitIndex < rf.lastLogIndex {
+		go rf.RealAppendEntries()
+	} else {
+		var args AppendEntriesArgs
+
+		args.Term = currentTerm
+		args.LeaderId = rf.me
+		args.LeaderCommit = rf.commitIndex
+		if rf.commitIndex < 1 {
+			args.PrevLogIndex = 0
+			args.PrevLogTerm = -1
+		} else {
+			args.PrevLogIndex = rf.commitIndex
+			args.PrevLogTerm = rf.log[rf.commitIndex].LogTerm
+		}
+		args.Entries = []LogEntry{}
+
+		for i := 0; i < len(rf.peers); i++ {
+			if i != rf.me {
+				go rf.collectAppendEntries(i, args, replyCh)
+			}
 		}
 	}
+
 	//DPrintf("HeartBeat, message Sent\n")
 	go func() {
 		for {
