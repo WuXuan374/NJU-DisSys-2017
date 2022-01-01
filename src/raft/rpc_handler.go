@@ -9,7 +9,7 @@ func (rf *Raft) RequestVote(args RequestVoteArgs, reply *RequestVoteReply) {
 	currentTerm, _ := rf.GetState()
 	reply.Term = currentTerm
 
-	DPrintf("follower %d with currentTerm: %d, args.Term: %d", rf.me, currentTerm, term)
+	//DPrintf("follower %d with currentTerm: %d, args.Term: %d", rf.me, currentTerm, term)
 
 	if term < currentTerm {
 		reply.VoteGranted = false
@@ -17,7 +17,7 @@ func (rf *Raft) RequestVote(args RequestVoteArgs, reply *RequestVoteReply) {
 		if rf.votedFor == -1 {
 			// 检查 if candidate is as up-to-date as receiver
 			upToDate := candidateUpToDate(rf, args.LastLogIndex, args.LastLogTerm)
-			DPrintf("args.LastLogIndex: %d, args.LastLogTerm: %d, candidateUpToDate: %t", args.LastLogIndex, args.LastLogTerm, upToDate)
+			//DPrintf("args.LastLogIndex: %d, args.LastLogTerm: %d, candidateUpToDate: %t", args.LastLogIndex, args.LastLogTerm, upToDate)
 			if upToDate {
 				rf.votedFor = args.CandidateId
 				reply.VoteGranted = true
@@ -37,7 +37,7 @@ func (rf *Raft) RequestVote(args RequestVoteArgs, reply *RequestVoteReply) {
 			rf.resetElectionTimer(randDuration(electionTimeoutLower, electionTimeoutUpper))
 		}
 		upToDate := candidateUpToDate(rf, args.LastLogIndex, args.LastLogTerm)
-		DPrintf("args.LastLogIndex: %d, args.LastLogTerm: %d, candidateUpToDate: %t", args.LastLogIndex, args.LastLogTerm, upToDate)
+		//DPrintf("args.LastLogIndex: %d, args.LastLogTerm: %d, candidateUpToDate: %t", args.LastLogIndex, args.LastLogTerm, upToDate)
 		if upToDate {
 			rf.votedFor = args.CandidateId
 			reply.VoteGranted = true
@@ -59,7 +59,7 @@ func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply)
 	reply.Success = true // 赋一个初值，后面可以改的
 	if term < currentTerm {
 		reply.Success = false
-		DPrintf("%d's currentTerm is: %d, args.Term is: %d", rf.me, currentTerm, args.Term)
+		//DPrintf("%d's currentTerm is: %d, args.Term is: %d", rf.me, currentTerm, args.Term)
 		DPrintf("%d reply with false, because term < currentTerm", rf.me)
 		return
 	}
@@ -70,7 +70,7 @@ func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply)
 	if !match {
 		reply.Success = false
 		DPrintf("%d reply with false, because did not find match log", rf.me)
-		DPrintf("args.PrevLogIndex: %d, args.PrevLogTerm: %d, %d has %d logs, conflictIndex: %d ", args.PrevLogIndex, args.PrevLogTerm, rf.me, len(rf.log), conflictIndex)
+		//DPrintf("args.PrevLogIndex: %d, args.PrevLogTerm: %d, %d has %d logs, conflictIndex: %d ", args.PrevLogIndex, args.PrevLogTerm, rf.me, len(rf.log), conflictIndex)
 		if conflictIndex != -1 {
 			// -1 代表不含这个日志条目
 			// 非 -1: 出现矛盾的日志条目，应该删除这个条目及之后的条目
@@ -95,7 +95,7 @@ func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply)
 	}
 
 	if !reply.Success {
-		DPrintf("%d reply with success: false, conflictLogIndex: %d", rf.me, reply.ConflictIndex)
+		//DPrintf("%d reply with success: false, conflictLogIndex: %d", rf.me, reply.ConflictIndex)
 	}
 	rf.currentTerm = term
 	if rf.role == "candidate" || rf.role == "leader" {
@@ -103,7 +103,7 @@ func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply)
 		rf.role = "follower"
 	}
 	rf.electionTimer.Reset(randDuration(electionTimeoutLower, electionTimeoutUpper))
-	DPrintf("%d reply with term: %d, success: %t\n", rf.me, reply.Term, reply.Success)
+	//DPrintf("%d reply with term: %d, success: %t\n", rf.me, reply.Term, reply.Success)
 	// apply log while commitIndex > lastApplied, do it on background
 	rf.applyLog()
 }
@@ -116,16 +116,18 @@ func (rf *Raft) InstallLogs(args AppendEntriesArgs, reply *AppendEntriesReply) {
 	DPrintf("%d receive InstallLogs", rf.me)
 	if term < currentTerm {
 		reply.Success = false
-		DPrintf("%d's currentTerm is: %d, args.Term is: %d", rf.me, currentTerm, args.Term)
-		DPrintf("%d reply with false, because term < currentTerm", rf.me)
+		//DPrintf("%d's currentTerm is: %d, args.Term is: %d", rf.me, currentTerm, args.Term)
+		//DPrintf("%d reply with false, because term < currentTerm", rf.me)
 		return
 	}
-	for _, item := range args.Entries {
-		if !contains(rf.log, item) {
-			rf.log = append(rf.log, item)
-			rf.lastLogIndex = len(rf.log) - 1
-		}
-	}
+	//for _, item := range args.Entries {
+	//	if !contains(rf.log, item) {
+	//		rf.log = append(rf.log, item)
+	//		rf.lastLogIndex = len(rf.log) - 1
+	//	}
+	//}
+	rf.log = args.Entries
+	rf.lastLogIndex = len(rf.log) - 1
 	if args.LeaderCommit > rf.commitIndex {
 		rf.commitIndex = min(args.LeaderCommit, len(rf.log)-1)
 	}

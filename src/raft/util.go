@@ -204,13 +204,12 @@ func (rf *Raft) applyLog() {
 				UseSnapshot: false,
 				Snapshot:    []byte{},
 			}
-			DPrintf("Follower %d apply log entry: %d", rf.me, rf.lastApplied)
+			DPrintf("%d apply log entry: %d", rf.me, rf.lastApplied)
 		}
 	}()
 }
 
 func (rf *Raft) installLogs(server int, conflictIndex int) {
-	replyCh := make(chan AppendEntriesReply)
 	DPrintf("%d install logs on %d", rf.me, server)
 	var followerReply AppendEntriesReply
 	currentTerm, _ := rf.GetState()
@@ -230,35 +229,29 @@ func (rf *Raft) installLogs(server int, conflictIndex int) {
 	}
 	ok := rf.sendInstallLogs(server, args, &followerReply)
 	if !ok {
-		followerReply.Err, followerReply.Server = true, server
+		followerReply.Err = true
 	}
-	replyCh <- followerReply
-	go func() {
-		for {
-			select {
-			case reply := <-replyCh:
-				//DPrintf("reply: %t, %d", reply.Success, reply.Term)
-				if reply.Err {
-					// RPC 通信失败，重发HeartBeat
-					go rf.installLogs(reply.Server, conflictIndex)
-				} else if reply.Term > currentTerm {
-					// 发现更大的 Term, 变成 follower
-					rf.returnToFollower(reply.Term)
-					return
-				}
-				if reply.Success {
-					rf.matchIndex[reply.Server] = args.PrevLogIndex + len(args.Entries)
-					rf.nextIndex[reply.Server] = args.PrevLogIndex + len(args.Entries) + 1
+	if followerReply.Err {
+		// RPC 通信失败，重发HeartBeat
+		go rf.installLogs(server, conflictIndex)
+		return
+	}
+	if followerReply.Term > currentTerm {
+		// 发现更大的 Term, 变成 follower
+		rf.returnToFollower(followerReply.Term)
+		return
+	}
+	if followerReply.Success {
+		rf.matchIndex[server] = args.PrevLogIndex + len(args.Entries)
+		rf.nextIndex[server] = args.PrevLogIndex + len(args.Entries) + 1
 
-					DPrintf("Leader %d receive replication vote from %d\n", rf.me, reply.Server)
-				} else {
-					newConflictIndex := reply.ConflictIndex
-					DPrintf("new Conflig found: %d", newConflictIndex)
-					go rf.installLogs(reply.Server, newConflictIndex)
-				}
-			}
-		}
-	}()
+		//DPrintf("Leader %d receive replication vote from %d\n", rf.me, server)
+		return
+	} else {
+		newConflictIndex := followerReply.ConflictIndex
+		go rf.installLogs(server, newConflictIndex)
+		return
+	}
 }
 
 // Helper function
