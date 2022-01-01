@@ -99,10 +99,52 @@ func (rf *Raft) collectRequestVote(server int, args RequestVoteArgs, replyCh cha
 func (rf *Raft) collectAppendEntries(server int, args AppendEntriesArgs, replyCh chan<- AppendEntriesReply) {
 	var reply AppendEntriesReply
 	ok := rf.sendAppendEntries(server, args, &reply)
+	reply.Server = server
 	if !ok {
-		reply.Err, reply.Server = true, server
+		reply.Err = true
 	}
-	replyCh <- reply
+	if reply.Err {
+		// RPC 通信失败，重发HeartBeat
+		go rf.collectAppendEntries(reply.Server, args, replyCh)
+	} else if reply.Term > rf.currentTerm {
+		// 发现更大的 Term, 变成 follower
+		rf.returnToFollower(reply.Term)
+		return
+	}
+	if reply.Success {
+		for {
+			if len(rf.replicateVote) > args.PrevLogIndex+len(args.Entries) {
+				break
+			}
+			rf.replicateVote = append(rf.replicateVote, 0)
+		}
+		for i := 0; i < len(args.Entries); i++ {
+			rf.replicateVote[args.PrevLogIndex+i+1] += 1
+			// 更新 nextIndex 和 matchIndex
+		}
+		rf.matchIndex[reply.Server] = args.PrevLogIndex + len(args.Entries)
+		rf.nextIndex[reply.Server] = args.PrevLogIndex + len(args.Entries) + 1
+
+		DPrintf("Leader %d receive replication vote from %d\n", rf.me, reply.Server)
+		return
+	} else {
+		//rf.nextIndex[reply.Server] -= 1
+		//DPrintf("nextIndex[%d] = %d", reply.Server, rf.nextIndex[reply.Server])
+		//if rf.nextIndex[reply.Server] > 0 && rf.nextIndex[reply.Server] <= rf.commitIndex {
+		//	newArgs := args
+		//	newArgs.PrevLogIndex = rf.nextIndex[reply.Server] - 1
+		//	if newArgs.PrevLogIndex > 0 {
+		//		newArgs.PrevLogTerm = rf.log[newArgs.PrevLogIndex].LogTerm
+		//	} else {
+		//		newArgs.PrevLogTerm = -1
+		//	}
+		//	newArgs.Entries = rf.log[rf.nextIndex[reply.Server] : rf.nextIndex[reply.Server]+1]
+		//	go rf.collectAppendEntries(reply.Server, newArgs, replyCh)
+		//}
+		DPrintf("Install log from %d to %d", rf.me, reply.Server)
+		conflictIndex := reply.ConflictIndex
+		go rf.installLogs(reply.Server, conflictIndex)
+	}
 }
 
 //
@@ -254,7 +296,6 @@ func (rf *Raft) HeartBeat(duration time.Duration) {
 }
 
 func (rf *Raft) RealAppendEntries(duration time.Duration) {
-	timer := time.NewTimer(duration)
 	var args AppendEntriesArgs
 	toCount := len(rf.log)-1 > rf.commitIndex // 如果发送了 Log Entry, 则需要计票
 	if !toCount {                             // 日志都已经 commit 了
@@ -297,56 +338,56 @@ func (rf *Raft) RealAppendEntries(duration time.Duration) {
 			//}
 		}
 	}
-	go func() {
-		for {
-			select {
-			case <-timer.C:
-				return
-			case reply := <-replyCh:
-				//DPrintf("reply: %t, %d", reply.Success, reply.Term)
-				if reply.Err {
-					// RPC 通信失败，重发HeartBeat
-					go rf.collectAppendEntries(reply.Server, args, replyCh)
-				} else if reply.Term > currentTerm {
-					// 发现更大的 Term, 变成 follower
-					rf.returnToFollower(reply.Term)
-					return
-				}
-				if reply.Success {
-					for {
-						if len(rf.replicateVote) > args.PrevLogIndex+len(args.Entries) {
-							break
-						}
-						rf.replicateVote = append(rf.replicateVote, 0)
-					}
-					for i := 0; i < len(args.Entries); i++ {
-						rf.replicateVote[args.PrevLogIndex+i+1] += 1
-						// 更新 nextIndex 和 matchIndex
-					}
-					rf.matchIndex[reply.Server] = args.PrevLogIndex + len(args.Entries)
-					rf.nextIndex[reply.Server] = args.PrevLogIndex + len(args.Entries) + 1
-
-					DPrintf("Leader %d receive replication vote from %d\n", rf.me, reply.Server)
-				} else {
-					//rf.nextIndex[reply.Server] -= 1
-					//DPrintf("nextIndex[%d] = %d", reply.Server, rf.nextIndex[reply.Server])
-					//if rf.nextIndex[reply.Server] > 0 && rf.nextIndex[reply.Server] <= rf.commitIndex {
-					//	newArgs := args
-					//	newArgs.PrevLogIndex = rf.nextIndex[reply.Server] - 1
-					//	if newArgs.PrevLogIndex > 0 {
-					//		newArgs.PrevLogTerm = rf.log[newArgs.PrevLogIndex].LogTerm
-					//	} else {
-					//		newArgs.PrevLogTerm = -1
-					//	}
-					//	newArgs.Entries = rf.log[rf.nextIndex[reply.Server] : rf.nextIndex[reply.Server]+1]
-					//	go rf.collectAppendEntries(reply.Server, newArgs, replyCh)
-					//}
-					conflictIndex := reply.ConflictIndex
-					go rf.installLogs(reply.Server, conflictIndex)
-				}
-			}
-		}
-	}()
+	//go func() {
+	//	for {
+	//		select {
+	//		case reply := <-replyCh:
+	//			DPrintf("reply: %t, %d", reply.Success, reply.Term)
+	//			if reply.Err {
+	//				// RPC 通信失败，重发HeartBeat
+	//				go rf.collectAppendEntries(reply.Server, args, replyCh)
+	//			} else if reply.Term > currentTerm {
+	//				// 发现更大的 Term, 变成 follower
+	//				rf.returnToFollower(reply.Term)
+	//				return
+	//			}
+	//			if reply.Success {
+	//				for {
+	//					if len(rf.replicateVote) > args.PrevLogIndex+len(args.Entries) {
+	//						break
+	//					}
+	//					rf.replicateVote = append(rf.replicateVote, 0)
+	//				}
+	//				for i := 0; i < len(args.Entries); i++ {
+	//					rf.replicateVote[args.PrevLogIndex+i+1] += 1
+	//					// 更新 nextIndex 和 matchIndex
+	//				}
+	//				rf.matchIndex[reply.Server] = args.PrevLogIndex + len(args.Entries)
+	//				rf.nextIndex[reply.Server] = args.PrevLogIndex + len(args.Entries) + 1
+	//
+	//				DPrintf("Leader %d receive replication vote from %d\n", rf.me, reply.Server)
+	//				return
+	//			} else {
+	//				//rf.nextIndex[reply.Server] -= 1
+	//				//DPrintf("nextIndex[%d] = %d", reply.Server, rf.nextIndex[reply.Server])
+	//				//if rf.nextIndex[reply.Server] > 0 && rf.nextIndex[reply.Server] <= rf.commitIndex {
+	//				//	newArgs := args
+	//				//	newArgs.PrevLogIndex = rf.nextIndex[reply.Server] - 1
+	//				//	if newArgs.PrevLogIndex > 0 {
+	//				//		newArgs.PrevLogTerm = rf.log[newArgs.PrevLogIndex].LogTerm
+	//				//	} else {
+	//				//		newArgs.PrevLogTerm = -1
+	//				//	}
+	//				//	newArgs.Entries = rf.log[rf.nextIndex[reply.Server] : rf.nextIndex[reply.Server]+1]
+	//				//	go rf.collectAppendEntries(reply.Server, newArgs, replyCh)
+	//				//}
+	//				DPrintf("Install log from %d to %d", rf.me, reply.Server)
+	//				conflictIndex := reply.ConflictIndex
+	//				go rf.installLogs(reply.Server, conflictIndex)
+	//			}
+	//		}
+	//	}
+	//}()
 
 	go func() {
 		for len(rf.replicateVote) <= args.PrevLogIndex+1 || rf.replicateVote[args.PrevLogIndex+1] < len(rf.peers)/2 {

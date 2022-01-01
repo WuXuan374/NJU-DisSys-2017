@@ -226,7 +226,7 @@ func (rf *Raft) installLogs(server int, conflictIndex int) {
 		LeaderCommit: rf.commitIndex,
 		PrevLogIndex: conflictIndex - 1,
 		PrevLogTerm:  prevLogTerm,
-		Entries:      rf.log[conflictIndex:],
+		Entries:      rf.log[:rf.commitIndex+1],
 	}
 	ok := rf.sendInstallLogs(server, args, &followerReply)
 	if !ok {
@@ -240,7 +240,7 @@ func (rf *Raft) installLogs(server int, conflictIndex int) {
 				//DPrintf("reply: %t, %d", reply.Success, reply.Term)
 				if reply.Err {
 					// RPC 通信失败，重发HeartBeat
-					go rf.sendInstallLogs(server, args, &followerReply)
+					go rf.installLogs(reply.Server, conflictIndex)
 				} else if reply.Term > currentTerm {
 					// 发现更大的 Term, 变成 follower
 					rf.returnToFollower(reply.Term)
