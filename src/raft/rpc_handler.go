@@ -136,7 +136,8 @@ func (rf *Raft) InstallLogs(args AppendEntriesArgs, reply *AppendEntriesReply) {
 		//DPrintf("%d reply with false, because term < currentTerm", rf.me)
 		return
 	}
-	rf.log = args.Entries
+	//rf.log = args.Entries
+	rf.checkAndUpdateLogs(args.Entries)
 	rf.lastLogIndex = len(rf.log) - 1
 	if args.LeaderCommit > rf.commitIndex {
 		rf.commitIndex = min(args.LeaderCommit, len(rf.log)-1)
@@ -144,6 +145,23 @@ func (rf *Raft) InstallLogs(args AppendEntriesArgs, reply *AppendEntriesReply) {
 	reply.LastMatchedIndex = rf.lastLogIndex
 	DPrintf("follower %d update commitIndex to %d", rf.me, rf.commitIndex)
 	rf.applyLog()
+}
+
+func (rf *Raft) checkAndUpdateLogs(entries []LogEntry) {
+	conflictIndex := -1
+	for i := 0; i < min(len(rf.log), len(entries)); i++ {
+		if rf.log[i] != entries[i] {
+			conflictIndex = i
+			break
+		}
+	}
+	if conflictIndex != -1 {
+		rf.log = append(rf.log[:conflictIndex], entries[conflictIndex:]...)
+	} else {
+		if len(entries) > len(rf.log) {
+			rf.log = append(rf.log, entries[len(rf.log):]...)
+		}
+	}
 }
 
 //
