@@ -314,31 +314,35 @@ func (rf *Raft) RealAppendEntries(duration time.Duration) {
 				}
 				if reply.Success {
 					for {
-						if len(rf.replicateVote) > reply.LogIndex {
+						if len(rf.replicateVote) > args.PrevLogIndex+len(args.Entries) {
 							break
 						}
 						rf.replicateVote = append(rf.replicateVote, 0)
 					}
-					rf.replicateVote[reply.LogIndex] += 1
-					// 更新 nextIndex 和 matchIndex
-					rf.matchIndex[reply.Server] = reply.LogIndex
-					rf.nextIndex[reply.Server] = reply.LogIndex + 1
-
-					DPrintf("Leader %d receive replication vote from %d, for log index: %d\n", rf.me, reply.Server, reply.LogIndex)
-				} else {
-					rf.nextIndex[reply.Server] -= 1
-					DPrintf("nextIndex[%d] = %d", reply.Server, rf.nextIndex[reply.Server])
-					if rf.nextIndex[reply.Server] > 0 && rf.nextIndex[reply.Server] <= rf.commitIndex {
-						newArgs := args
-						newArgs.PrevLogIndex = rf.nextIndex[reply.Server] - 1
-						if newArgs.PrevLogIndex > 0 {
-							newArgs.PrevLogTerm = rf.log[newArgs.PrevLogIndex].LogTerm
-						} else {
-							newArgs.PrevLogTerm = -1
-						}
-						newArgs.Entries = rf.log[rf.nextIndex[reply.Server] : rf.nextIndex[reply.Server]+1]
-						go rf.collectAppendEntries(reply.Server, newArgs, replyCh)
+					for i := 0; i < len(args.Entries); i++ {
+						rf.replicateVote[args.PrevLogIndex+i+1] += 1
+						// 更新 nextIndex 和 matchIndex
 					}
+					rf.matchIndex[reply.Server] = args.PrevLogIndex + len(args.Entries)
+					rf.nextIndex[reply.Server] = args.PrevLogIndex + len(args.Entries) + 1
+
+					DPrintf("Leader %d receive replication vote from %d\n", rf.me, reply.Server)
+				} else {
+					//rf.nextIndex[reply.Server] -= 1
+					//DPrintf("nextIndex[%d] = %d", reply.Server, rf.nextIndex[reply.Server])
+					//if rf.nextIndex[reply.Server] > 0 && rf.nextIndex[reply.Server] <= rf.commitIndex {
+					//	newArgs := args
+					//	newArgs.PrevLogIndex = rf.nextIndex[reply.Server] - 1
+					//	if newArgs.PrevLogIndex > 0 {
+					//		newArgs.PrevLogTerm = rf.log[newArgs.PrevLogIndex].LogTerm
+					//	} else {
+					//		newArgs.PrevLogTerm = -1
+					//	}
+					//	newArgs.Entries = rf.log[rf.nextIndex[reply.Server] : rf.nextIndex[reply.Server]+1]
+					//	go rf.collectAppendEntries(reply.Server, newArgs, replyCh)
+					//}
+					conflictIndex := reply.ConflictIndex
+					go rf.installLogs(reply.Server, conflictIndex)
 				}
 			}
 		}
@@ -352,20 +356,9 @@ func (rf *Raft) RealAppendEntries(duration time.Duration) {
 		if args.PrevLogIndex+1 > rf.commitIndex {
 			rf.commitIndex = args.PrevLogIndex + 1
 		}
-		for {
-			if rf.lastApplied >= rf.commitIndex {
-				break
-			}
-			rf.lastApplied += 1
-			rf.applyCh <- ApplyMsg{
-				Index:       rf.lastApplied,
-				Command:     rf.log[rf.lastApplied].Command,
-				UseSnapshot: false,
-				Snapshot:    []byte{},
-			}
-			DPrintf("Leader %d apply log entry: %d", rf.me, rf.lastApplied)
-		}
+		rf.applyLog()
 	}()
+
 }
 
 //

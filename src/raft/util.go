@@ -82,11 +82,11 @@ type AppendEntriesArgs struct {
 // AppendEntries RPC reply structure
 //
 type AppendEntriesReply struct {
-	Term     int  // currentTerm, for leader to update itself (revert to follower state)
-	Success  bool //
-	Err      bool // TODO: 后期可以改成具体的 error
-	Server   int
-	LogIndex int // the index of successfully replicated log
+	Term          int  // currentTerm, for leader to update itself (revert to follower state)
+	Success       bool //
+	Err           bool // TODO: 后期可以改成具体的 error
+	Server        int
+	ConflictIndex int // the index of successfully replicated log
 }
 
 // Debugging
@@ -162,11 +162,14 @@ func (rf *Raft) findMatchingLogEntry(logIndex int, logTerm int) (bool, int) {
 	// bool: false 代表不匹配
 	// int: 如果不匹配，返回不匹配的 index, 方便调用程序删除之后的日志条目
 	// 如果这是第一个日志，就不用校验了
+	if logIndex < 0 {
+		return false, -1
+	}
 	if logIndex == 0 {
 		return true, -1
 	}
 	if logIndex > len(rf.log)-1 {
-		return false, -1
+		return false, 0
 	}
 	if logTerm != rf.log[logIndex].LogTerm {
 		return false, logIndex
@@ -186,6 +189,86 @@ func candidateUpToDate(receiver *Raft, candidateLogIndex int, candidateLogTerm i
 	}
 	// same term
 	return candidateLogIndex >= receiver.lastLogIndex
+}
+
+func (rf *Raft) applyLog() {
+	go func() {
+		for {
+			if rf.lastApplied >= rf.commitIndex {
+				break
+			}
+			rf.lastApplied += 1
+			rf.applyCh <- ApplyMsg{
+				Index:       rf.lastApplied,
+				Command:     rf.log[rf.lastApplied].Command,
+				UseSnapshot: false,
+				Snapshot:    []byte{},
+			}
+			DPrintf("Follower %d apply log entry: %d", rf.me, rf.lastApplied)
+		}
+	}()
+}
+
+func (rf *Raft) installLogs(server int, conflictIndex int) {
+	replyCh := make(chan AppendEntriesReply)
+	DPrintf("%d install logs on %d", rf.me, server)
+	var followerReply AppendEntriesReply
+	currentTerm, _ := rf.GetState()
+	var prevLogTerm int
+	if conflictIndex > 1 {
+		prevLogTerm = rf.log[conflictIndex-1].LogTerm
+	} else {
+		prevLogTerm = 0
+	}
+	args := AppendEntriesArgs{
+		Term:         currentTerm,
+		LeaderId:     rf.me,
+		LeaderCommit: rf.commitIndex,
+		PrevLogIndex: conflictIndex - 1,
+		PrevLogTerm:  prevLogTerm,
+		Entries:      rf.log[conflictIndex:],
+	}
+	ok := rf.sendInstallLogs(server, args, &followerReply)
+	if !ok {
+		followerReply.Err, followerReply.Server = true, server
+	}
+	replyCh <- followerReply
+	go func() {
+		for {
+			select {
+			case reply := <-replyCh:
+				//DPrintf("reply: %t, %d", reply.Success, reply.Term)
+				if reply.Err {
+					// RPC 通信失败，重发HeartBeat
+					go rf.sendInstallLogs(server, args, &followerReply)
+				} else if reply.Term > currentTerm {
+					// 发现更大的 Term, 变成 follower
+					rf.returnToFollower(reply.Term)
+					return
+				}
+				if reply.Success {
+					rf.matchIndex[reply.Server] = args.PrevLogIndex + len(args.Entries)
+					rf.nextIndex[reply.Server] = args.PrevLogIndex + len(args.Entries) + 1
+
+					DPrintf("Leader %d receive replication vote from %d\n", rf.me, reply.Server)
+				} else {
+					newConflictIndex := reply.ConflictIndex
+					DPrintf("new Conflig found: %d", newConflictIndex)
+					go rf.installLogs(reply.Server, newConflictIndex)
+				}
+			}
+		}
+	}()
+}
+
+// Helper function
+func contains(s []LogEntry, e LogEntry) bool {
+	for _, a := range s {
+		if a.LogTerm == e.LogTerm && a.Command == e.Command {
+			return true
+		}
+	}
+	return false
 }
 
 //

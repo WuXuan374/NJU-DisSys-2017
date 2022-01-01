@@ -70,20 +70,22 @@ func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply)
 	if !match {
 		reply.Success = false
 		DPrintf("%d reply with false, because did not find match log", rf.me)
-		DPrintf("args.PrevLogIndex: %d, args.PrevLogTerm: %d, %d has %d logs ", args.PrevLogIndex, args.PrevLogTerm, rf.me, len(rf.log))
+		DPrintf("args.PrevLogIndex: %d, args.PrevLogTerm: %d, %d has %d logs, conflictIndex: %d ", args.PrevLogIndex, args.PrevLogTerm, rf.me, len(rf.log), conflictIndex)
 		if conflictIndex != -1 {
 			// -1 代表不含这个日志条目
 			// 非 -1: 出现矛盾的日志条目，应该删除这个条目及之后的条目
 			rf.log = rf.log[:conflictIndex]
+			reply.ConflictIndex = conflictIndex
 		}
 	} else {
 		// 前一个日志条目匹配
 		// append log entries
 		// TODO：是否需要考虑跟随者已经有了一部分 Log
-		if len(args.Entries) > 0 {
-			rf.log = append(rf.log, args.Entries...)
-			rf.lastLogIndex = len(rf.log) - 1
-			reply.LogIndex = rf.lastLogIndex
+		for _, item := range args.Entries {
+			if !contains(rf.log, item) {
+				rf.log = append(rf.log, item)
+				rf.lastLogIndex = len(rf.log) - 1
+			}
 		}
 
 		if args.LeaderCommit > rf.commitIndex {
@@ -92,29 +94,43 @@ func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply)
 		DPrintf("follower %d update commitIndex to %d", rf.me, rf.commitIndex)
 	}
 
+	if !reply.Success {
+		DPrintf("%d reply with success: false, conflictLogIndex: %d", rf.me, reply.ConflictIndex)
+	}
 	rf.currentTerm = term
 	if rf.role == "candidate" || rf.role == "leader" {
 		// receive AppendEntries from leader
 		rf.role = "follower"
 	}
 	rf.electionTimer.Reset(randDuration(electionTimeoutLower, electionTimeoutUpper))
-	DPrintf("%d reply with term: %d, success: %t, logIndex: %d\n", rf.me, reply.Term, reply.Success, reply.LogIndex)
+	DPrintf("%d reply with term: %d, success: %t\n", rf.me, reply.Term, reply.Success)
 	// apply log while commitIndex > lastApplied, do it on background
-	go func() {
-		for {
-			if rf.lastApplied >= rf.commitIndex {
-				break
-			}
-			rf.lastApplied += 1
-			rf.applyCh <- ApplyMsg{
-				Index:       rf.lastApplied,
-				Command:     rf.log[rf.lastApplied].Command,
-				UseSnapshot: false,
-				Snapshot:    []byte{},
-			}
-			DPrintf("Follower %d apply log entry: %d", rf.me, rf.lastApplied)
+	rf.applyLog()
+}
+
+func (rf *Raft) InstallLogs(args AppendEntriesArgs, reply *AppendEntriesReply) {
+	term := args.Term
+	currentTerm, _ := rf.GetState()
+	reply.Term = currentTerm
+	reply.Success = true // 赋一个初值，后面可以改的
+	DPrintf("%d receive InstallLogs", rf.me)
+	if term < currentTerm {
+		reply.Success = false
+		DPrintf("%d's currentTerm is: %d, args.Term is: %d", rf.me, currentTerm, args.Term)
+		DPrintf("%d reply with false, because term < currentTerm", rf.me)
+		return
+	}
+	for _, item := range args.Entries {
+		if !contains(rf.log, item) {
+			rf.log = append(rf.log, item)
+			rf.lastLogIndex = len(rf.log) - 1
 		}
-	}()
+	}
+	if args.LeaderCommit > rf.commitIndex {
+		rf.commitIndex = min(args.LeaderCommit, len(rf.log)-1)
+	}
+	DPrintf("follower %d update commitIndex to %d", rf.me, rf.commitIndex)
+	rf.applyLog()
 }
 
 //
@@ -131,5 +147,10 @@ func (rf *Raft) sendRequestVote(server int, args RequestVoteArgs, reply *Request
 // simply send AppendEntries RPC to a server
 func (rf *Raft) sendAppendEntries(server int, args AppendEntriesArgs, reply *AppendEntriesReply) bool {
 	ok := rf.peers[server].Call("Raft.AppendEntries", args, reply)
+	return ok
+}
+
+func (rf *Raft) sendInstallLogs(server int, args AppendEntriesArgs, reply *AppendEntriesReply) bool {
+	ok := rf.peers[server].Call("Raft.InstallLogs", args, reply)
 	return ok
 }
